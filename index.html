@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>나만의 용돈 관리</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: "Malgun Gothic", Arial, sans-serif;
+      background: #f3f6fb; color: #202938;
+    }
+    .wrap { max-width: 920px; margin: 38px auto; padding: 0 18px; }
+    header { margin-bottom: 22px; }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    .sub { color: #697586; font-size: 14px; }
+    .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 18px; }
+    .card, .panel { background: white; border-radius: 16px; padding: 20px; box-shadow: 0 5px 20px #26364b0c; }
+    .label { color: #687386; font-size: 13px; margin-bottom: 10px; }
+    .amount { font-size: 25px; font-weight: 700; }
+    .income { color: #168653; } .expense { color: #dc5555; } .balance { color: #315fce; }
+    .layout { display: grid; grid-template-columns: 330px 1fr; gap: 18px; }
+    h2 { font-size: 18px; margin: 0 0 17px; }
+    label { display: block; font-size: 13px; color: #596579; margin: 13px 0 7px; }
+    input, select {
+      width: 100%; padding: 12px; border: 1px solid #dce2eb; border-radius: 9px;
+      font-size: 14px; background: white; outline: none;
+    }
+    input:focus, select:focus { border-color: #5278dc; }
+    button {
+      border: 0; border-radius: 9px; padding: 12px 14px; font-size: 14px;
+      font-weight: 700; cursor: pointer;
+    }
+    .primary { background: #315fce; color: white; width: 100%; margin-top: 17px; }
+    .primary:hover { background: #244eaf; }
+    .danger { background: #fff0f0; color: #c44747; }
+    .small { padding: 7px 10px; font-size: 12px; }
+    .list-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .empty { color: #8993a3; text-align: center; padding: 38px 8px; font-size: 14px; }
+    .item {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 14px 0; border-bottom: 1px solid #edf0f5;
+    }
+    .item:last-child { border-bottom: 0; }
+    .item-title { font-weight: 700; font-size: 14px; margin-bottom: 5px; }
+    .item-date { color: #929bab; font-size: 12px; }
+    .right { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+    .money { font-weight: 700; font-size: 14px; }
+    .message { min-height: 18px; color: #c44747; font-size: 12px; margin-top: 9px; }
+    .hint { color: #8791a1; font-size: 12px; margin-top: 14px; line-height: 1.5; }
+    @media (max-width: 700px) {
+      .summary { grid-template-columns: 1fr; gap: 9px; }
+      .layout { grid-template-columns: 1fr; }
+      .wrap { margin-top: 24px; }
+      .amount { font-size: 22px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <h1>💰 나만의 용돈 관리</h1>
+      <div class="sub">수입과 지출을 기록하고 현재 잔액을 확인해 보세요.</div>
+    </header>
+
+    <section class="summary">
+      <div class="card">
+        <div class="label">총수입</div>
+        <div class="amount income" id="totalIncome">0원</div>
+      </div>
+      <div class="card">
+        <div class="label">총지출</div>
+        <div class="amount expense" id="totalExpense">0원</div>
+      </div>
+      <div class="card">
+        <div class="label">현재 잔액</div>
+        <div class="amount balance" id="balance">0원</div>
+      </div>
+    </section>
+
+    <section class="layout">
+      <div class="panel">
+        <h2>거래 등록</h2>
+        <form id="entryForm">
+          <label for="type">거래 종류</label>
+          <select id="type">
+            <option value="income">수입</option>
+            <option value="expense">지출</option>
+          </select>
+
+          <label for="amount">금액 (원)</label>
+          <input id="amount" type="number" min="1" step="1" placeholder="예: 50000" required>
+
+          <label for="memo">내용</label>
+          <input id="memo" type="text" maxlength="40" placeholder="예: 용돈, 식비, 교통비" required>
+
+          <button class="primary" type="submit">내역 등록하기</button>
+          <div class="message" id="message" role="status"></div>
+        </form>
+        <div class="hint">※ 입력한 내역은 이 브라우저에 자동 저장됩니다.</div>
+      </div>
+
+      <div class="panel">
+        <div class="list-head">
+          <h2>거래 내역</h2>
+          <button class="danger small" id="clearBtn" type="button">전체 삭제</button>
+        </div>
+        <div id="recordList"><div class="empty">아직 등록된 내역이 없습니다.</div></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const STORAGE_KEY = "myAllowanceRecords";
+    let records = [];
+
+    // 브라우저에 저장된 거래 내역 불러오기
+    function loadRecords() {
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        records = saved ? JSON.parse(saved) : [];
+        if (!Array.isArray(records)) records = [];
+      } catch (error) {
+        records = [];
+      }
+      render();
+    }
+
+    // 거래 내역을 브라우저에 저장하기
+    function saveRecords() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+    }
+
+    // 원 단위로 보기 좋게 표시하기
+    function won(number) {
+      return Number(number).toLocaleString("ko-KR") + "원";
+    }
+
+    // 수입, 지출, 잔액 계산 및 화면 갱신
+    function render() {
+      const income = records
+        .filter(record => record.type === "income")
+        .reduce((sum, record) => sum + record.amount, 0);
+
+      const expense = records
+        .filter(record => record.type === "expense")
+        .reduce((sum, record) => sum + record.amount, 0);
+
+      document.getElementById("totalIncome").textContent = won(income);
+      document.getElementById("totalExpense").textContent = won(expense);
+      document.getElementById("balance").textContent = won(income - expense);
+
+      const list = document.getElementById("recordList");
+      list.replaceChildren();
+
+      if (records.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "아직 등록된 내역이 없습니다.";
+        list.appendChild(empty);
+        return;
+      }
+
+      [...records].reverse().forEach(record => {
+        const item = document.createElement("div");
+        item.className = "item";
+
+        const info = document.createElement("div");
+        const title = document.createElement("div");
+        title.className = "item-title";
+        title.textContent = (record.type === "income" ? "🟢 " : "🔴 ") + record.memo;
+
+        const date = document.createElement("div");
+        date.className = "item-date";
+        date.textContent = record.date;
+
+        info.append(title, date);
+
+        const right = document.createElement("div");
+        right.className = "right";
+
+        const money = document.createElement("span");
+        money.className = "money " + (record.type === "income" ? "income" : "expense");
+        money.textContent = (record.type === "income" ? "+" : "-") + won(record.amount);
+
+        const del = document.createElement("button");
+        del.className = "danger small";
+        del.type = "button";
+        del.textContent = "삭제";
+        del.addEventListener("click", () => deleteRecord(record.id));
+
+        right.append(money, del);
+        item.append(info, right);
+        list.appendChild(item);
+      });
+    }
+
+    // 입력한 수입 또는 지출 등록하기
+    document.getElementById("entryForm").addEventListener("submit", function(event) {
+      event.preventDefault();
+
+      const type = document.getElementById("type").value;
+      const amount = Number(document.getElementById("amount").value);
+      const memo = document.getElementById("memo").value.trim();
+      const message = document.getElementById("message");
+
+      if (!Number.isFinite(amount) || amount <= 0 || !Number.isInteger(amount)) {
+        message.textContent = "금액은 1원 이상의 정수로 입력해 주세요.";
+        return;
+      }
+      if (!memo) {
+        message.textContent = "거래 내용을 입력해 주세요.";
+        return;
+      }
+
+      records.push({
+        id: Date.now() + Math.random(),
+        type,
+        amount,
+        memo,
+        date: new Date().toLocaleString("ko-KR")
+      });
+
+      saveRecords();
+      render();
+      this.reset();
+      message.style.color = "#168653";
+      message.textContent = "거래 내역이 등록되었습니다.";
+    });
+
+    // 선택한 거래 한 건 삭제하기
+    function deleteRecord(id) {
+      records = records.filter(record => record.id !== id);
+      saveRecords();
+      render();
+    }
+
+    // 전체 거래 내역 삭제하기
+    document.getElementById("clearBtn").addEventListener("click", () => {
+      if (records.length === 0) return;
+      if (confirm("모든 거래 내역을 삭제할까요?")) {
+        records = [];
+        saveRecords();
+        render();
+        document.getElementById("message").textContent = "";
+      }
+    });
+
+    loadRecords();
+  </script>
+</body>
+</html>
